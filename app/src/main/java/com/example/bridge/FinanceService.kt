@@ -14,27 +14,30 @@ class FinanceService : NotificationListenerService() {
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // 1. Only listen to PhonePe
         if (sbn.packageName != "com.phonepe.app") return
 
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
         
-        // Match example: "Paid to Blinkit DEBIT ₹303"
-        val regex = "Paid to (.+?) DEBIT ₹([\\d,]+(?:\\.\\d+)?)".toRegex()
-        val match = regex.find(text)
+        // 2. Targeted Wallet Regex
+        // Matches: "You've paid Rs. 1 via PhonePe wallet" or "Rs. 1,250.50"
+        val walletRegex = "You've paid Rs\\.\\s*([\\d,]+(?:\\.\\d+)?)\\s*via PhonePe wallet".toRegex()
+        val match = walletRegex.find(text)
 
-        match?.let {
-            val merchant = it.groupValues[1]
-            val amountCleaned = it.groupValues[2].replace(",", "")
+        if (match != null) {
+            // Extract amount and remove commas (e.g., "1,000" -> "1000")
+            val amountCleaned = match.groupValues[1].replace(",", "")
             val amountValue = amountCleaned.toDoubleOrNull() ?: 0.0
             
-            val hash = UUID.nameUUIDFromBytes(text.toByteArray()).toString()
+            // Create a unique ID so we don't log the same notification twice
+            val idempotencyKey = UUID.nameUUIDFromBytes(text.toByteArray()).toString()
 
             val payload = TransactionRequest(
                 account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
                 amount = amountValue,
-                description = "Paid to $merchant",
+                description = "PhonePe Wallet Payment",
                 type = "expense",
-                idempotency_key = hash
+                idempotency_key = idempotencyKey
             )
 
             syncToVercel(payload)
@@ -56,7 +59,8 @@ class FinanceService : NotificationListenerService() {
                 try {
                     RetrofitClient.instance.postTransaction(token, data)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    // Log error to ADB for your Fedora terminal
+                    android.util.Log.e("BRIDGE_ERROR", "Sync failed: ${e.message}")
                 }
             }
         } catch (e: Exception) {
