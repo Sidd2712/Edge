@@ -35,6 +35,7 @@ class FinanceService : NotificationListenerService() {
             val payload = TransactionRequest(
                 account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
                 amount = amountValue,
+                category = "PhonePe Wallet",
                 description = "PhonePe Wallet Payment",
                 type = "expense",
                 idempotency_key = idempotencyKey
