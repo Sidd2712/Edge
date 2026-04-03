@@ -1,7 +1,10 @@
 package com.example.bridge
 
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.widget.Toast
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.CoroutineScope
@@ -12,20 +15,28 @@ class FinanceService : NotificationListenerService() {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    // Helper to show debugging messages on screen
+    private fun showToast(msg: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // 1. Filter for PhonePe only
         if (sbn.packageName != "com.phonepe.app") return
 
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
         
-        // 2. Wallet-specific Regex
-        val walletRegex = "You've paid Rs\\.\\s*([\\d,]+(?:\\.\\d+)?)\\s*via PhonePe wallet".toRegex()
+        // --- DEBUG: This will show you EXACTLY what the app hears ---
+        showToast("PhonePe Heard: ${text.take(20)}...")
+
+        // Improved Regex: More flexible with spaces and dots
+        val walletRegex = "paid Rs\\.\\s*([\\d,.]+)\\s*via PhonePe wallet".toRegex(RegexOption.IGNORE_CASE)
         val match = walletRegex.find(text)
 
         if (match != null) {
             val amountValue = match.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
             
-            // 3. Create payload matching your EXACT 5-field schema (fixes 422)
             val payload = TransactionRequest(
                 amount = amountValue,
                 category = "PhonePe Wallet",
@@ -34,8 +45,12 @@ class FinanceService : NotificationListenerService() {
                 account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
             )
 
-            android.util.Log.d("BRIDGE_DEBUG", "Notification matched! Amount: $amountValue")
+            showToast("Match Found! ₹$amountValue. Syncing...")
             syncToVercel(payload)
+        } else {
+            // If you see this Toast, our Regex pattern is wrong for your message
+            showToast("Regex Mismatch for message!")
+            android.util.Log.d("BRIDGE_DEBUG", "No match for: $text")
         }
     }
 
@@ -49,26 +64,18 @@ class FinanceService : NotificationListenerService() {
             )
             
             val rawToken = securePrefs.getString("auth_token", "") ?: ""
-            
-            // 4. Smart Bearer Logic (Ensures no "Bearer Bearer" 401 error)
-            val authHeader = if (rawToken.startsWith("Bearer", ignoreCase = true)) {
-                rawToken 
-            } else {
-                "Bearer $rawToken"
-            }
+            val authHeader = if (rawToken.startsWith("Bearer", ignoreCase = true)) rawToken else "Bearer $rawToken"
 
             scope.launch {
                 try {
-                    // Call the API
                     RetrofitClient.instance.postTransaction(authHeader, data)
-                    android.util.Log.d("BRIDGE_DEBUG", "Service Sync: 201 Created")
+                    showToast("Sync Successful: 201")
                 } catch (e: Exception) {
-                    // This will catch 422 if the model still doesn't match
-                    android.util.Log.e("BRIDGE_ERROR", "Service Sync failed: ${e.localizedMessage}")
+                    showToast("Sync Failed: ${e.localizedMessage}")
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("BRIDGE_ERROR", "Vault/Service Error: ${e.message}")
+            android.util.Log.e("BRIDGE_ERROR", "Vault Error: ${e.message}")
         }
     }
 }
