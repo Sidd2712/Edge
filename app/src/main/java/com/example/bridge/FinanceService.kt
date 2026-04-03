@@ -15,22 +15,40 @@ class FinanceService : NotificationListenerService() {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // Helper to show debugging messages on screen
     private fun showToast(msg: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
+    // --- STEP 2: LIFECYCLE HOOKS ---
+    
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        showToast("👂 Finance Bridge: LISTENING")
+        android.util.Log.d("BRIDGE_DEBUG", "Service bound to Android OS")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        showToast("❌ Finance Bridge: DISCONNECTED")
+    }
+
+    // --- NOTIFICATION HANDLER ---
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != "com.phonepe.app") return
-
+        val packageName = sbn.packageName
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
-        
-        // --- DEBUG: This will show you EXACTLY what the app hears ---
-        showToast("PhonePe Heard: ${text.take(20)}...")
 
-        // Improved Regex: More flexible with spaces and dots
+        // DEBUG: Uncomment the line below to see EVERY notification your phone gets
+        // showToast("Heard from: $packageName") 
+
+
+        // 1. Log the full text to your Fedora terminal (via adb logcat)
+        android.util.Log.d("BRIDGE_DEBUG", "PhonePe Raw Text: $text")
+        showToast("PhonePe: ${text.take(15)}...")
+
+        // 2. Robust Regex (Handles Rs., ₹, dots, and spaces)
         val walletRegex = "paid Rs\\.\\s*([\\d,.]+)\\s*via PhonePe wallet".toRegex(RegexOption.IGNORE_CASE)
         val match = walletRegex.find(text)
 
@@ -45,12 +63,11 @@ class FinanceService : NotificationListenerService() {
                 account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
             )
 
-            showToast("Match Found! ₹$amountValue. Syncing...")
+            showToast("✅ Match! ₹$amountValue. Syncing...")
             syncToVercel(payload)
         } else {
-            // If you see this Toast, our Regex pattern is wrong for your message
-            showToast("Regex Mismatch for message!")
-            android.util.Log.d("BRIDGE_DEBUG", "No match for: $text")
+            // If it hits here, the text doesn't match our "paid Rs... via wallet" pattern
+            android.util.Log.e("BRIDGE_DEBUG", "Regex Mismatch: $text")
         }
     }
 
@@ -69,9 +86,9 @@ class FinanceService : NotificationListenerService() {
             scope.launch {
                 try {
                     RetrofitClient.instance.postTransaction(authHeader, data)
-                    showToast("Sync Successful: 201")
+                    showToast("🚀 Vercel Sync: 201")
                 } catch (e: Exception) {
-                    showToast("Sync Failed: ${e.localizedMessage}")
+                    showToast("⚠️ Sync Error: ${e.localizedMessage}")
                 }
             }
         } catch (e: Exception) {

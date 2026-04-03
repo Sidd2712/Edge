@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.*
+import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
     private lateinit var logView: TextView
@@ -19,6 +20,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // --- UI Setup ---
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(50, 60, 50, 50) 
@@ -57,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         val btnPermission = Button(this).apply { text = "Fix Notification Access" }
 
         logView = TextView(this).apply {
-            text = "Logs:\n"
+            text = "System Logs:\n"
             setTextColor(0xFF03DAC6.toInt())
             textSize = 14f
             setPadding(0, 40, 0, 0)
@@ -70,6 +72,16 @@ class MainActivity : AppCompatActivity() {
         root.addView(logView)
         setContentView(root)
 
+        // --- STEP 1: ADD SERVICE STATUS CHECK HERE ---
+        val isEnabled = isNotificationServiceEnabled()
+        if (isEnabled) {
+            logView.append("> Service: LISTENING 👂\n")
+        } else {
+            logView.append("> Service: DISCONNECTED ❌\n")
+            statusText.text = "  Action Required: Enable Service"
+            statusDot.setBackgroundColor(0xFFCF6679.toInt()) // Red
+        }
+
         saveToken()
 
         btnTest.setOnClickListener { performTestSync("Manual Request") }
@@ -78,6 +90,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         performTestSync("Startup Check")
+    }
+
+    // This checks if the Android OS has actually "bound" to your service
+    private fun isNotificationServiceEnabled(): Boolean {
+        val cn = android.content.ComponentName(this, FinanceService::class.java)
+        val flat = android.provider.Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        return flat != null && flat.contains(cn.flattenToString())
     }
 
     private fun saveToken() {
@@ -90,14 +109,17 @@ class MainActivity : AppCompatActivity() {
             )
             val token = com.example.bridge.BuildConfig.JWT_TOKEN
             securePrefs.edit().putString("auth_token", token).apply()
-            logView.append("> Token Vault Secured (Len: ${token.length})\n")
+            logView.append("> Token stored (Len: ${token.length})\n")
         } catch (e: Exception) {
             logView.append("> Vault Error: ${e.message}\n")
         }
     }
 
     private fun performTestSync(reason: String) {
-        statusText.text = "  Syncing..."
+        // Only update UI if we aren't already in an error state from the service check
+        if (statusText.text.contains("Initializing")) {
+            statusText.text = "  Syncing..."
+        }
         
         scope.launch {
             try {
@@ -108,12 +130,11 @@ class MainActivity : AppCompatActivity() {
                     "Bearer $rawToken"
                 }
                 
-                // EXACT MATCH FOR YOUR CURL PAYLOAD
                 val testData = TransactionRequest(
-                    amount = 1.0,           // Changed from 0.0 to 1.0
-                    category = "string",     // Matches your curl exactly
-                    description = "string",  // Matches your curl exactly
-                    type = "string",         // Matches your curl exactly
+                    amount = 1.0,
+                    category = "string",
+                    description = reason,
+                    type = "string",
                     account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
                 )
                 
@@ -121,13 +142,16 @@ class MainActivity : AppCompatActivity() {
                     RetrofitClient.instance.postTransaction(authHeader, testData)
                 }
                 
-                statusText.text = "  Vercel Online"
-                statusDot.setBackgroundColor(0xFF03DAC5.toInt()) 
-                logView.append("> Success: 201 Created\n")
+                // On Success, we only turn Green if the Service is also listening
+                if (isNotificationServiceEnabled()) {
+                    statusText.text = "  System Online"
+                    statusDot.setBackgroundColor(0xFF03DAC5.toInt()) // Teal
+                }
+                logView.append("> Sync Success: 201 Created\n")
             } catch (e: Exception) {
-                statusText.text = "  Data Error (422?)"
+                statusText.text = "  Connection Error"
                 statusDot.setBackgroundColor(0xFFCF6679.toInt())
-                logView.append("> Error: ${e.localizedMessage}\n")
+                logView.append("> Sync Error: ${e.localizedMessage}\n")
             }
         }
     }
