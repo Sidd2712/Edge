@@ -5,7 +5,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
-import com.example.bridge.BuildConfig
+// Note: We will access BuildConfig directly to avoid import issues
 
 interface TransactionApi {
     @POST("api/transactions/")
@@ -16,7 +16,7 @@ interface TransactionApi {
 }
 
 object RetrofitClient {
-    private const val BASE_URL = BuildConfig.BASE_URL
+    private val BASE_URL: String = com.example.bridge.BuildConfig.BASE_URL
 
     val instance: TransactionApi by lazy {
         Retrofit.Builder()
