@@ -14,17 +14,17 @@ import java.util.UUID
 class MainActivity : AppCompatActivity() {
     private lateinit var logView: TextView
     private lateinit var statusDot: View
-    private lateinit var statusText: TextView // Moved to class level
+    private lateinit var statusText: TextView
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Setup Programmatic Layout
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            padding = 50
-            setBackgroundColor(0xFF121212.toInt()) // Dark Mode
+            // FIXED: Changed 'padding = 50' to 'setPadding'
+            setPadding(50, 50, 50, 50) 
+            setBackgroundColor(0xFF121212.toInt())
         }
 
         val title = TextView(this).apply {
@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
 
         statusDot = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(40, 40)
-            setBackgroundResource(android.R.drawable.presence_invisible) // Default grey
+            setBackgroundResource(android.R.drawable.presence_invisible)
         }
 
         statusText = TextView(this).apply {
@@ -53,13 +53,8 @@ class MainActivity : AppCompatActivity() {
         statusRow.addView(statusDot)
         statusRow.addView(statusText)
 
-        val btnTest = Button(this).apply {
-            text = "Manual Sync Test"
-        }
-
-        val btnPermission = Button(this).apply {
-            text = "Fix Notification Access"
-        }
+        val btnTest = Button(this).apply { text = "Manual Sync Test" }
+        val btnPermission = Button(this).apply { text = "Fix Notification Access" }
 
         logView = TextView(this).apply {
             text = "Logs:\n> App Launched\n"
@@ -75,19 +70,14 @@ class MainActivity : AppCompatActivity() {
         root.addView(logView)
         setContentView(root)
 
-        // 2. Logic: Save Token
         saveToken()
 
-        // 3. Button Actions
-        btnTest.setOnClickListener {
-            performTestSync("Manual UI Test")
-        }
-
+        btnTest.setOnClickListener { performTestSync("Manual UI Test") }
         btnPermission.setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
 
-        // --- NEW: AUTO-HIT ON OPEN ---
+        // Auto-hit on open
         performTestSync("Startup Pulse Check")
     }
 
@@ -108,32 +98,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun performTestSync(reason: String) {
         statusText.text = "  Syncing: $reason..."
-        logView.append("> Action: $reason\n")
         
         scope.launch {
             try {
+                // MATCHING YOUR CURL DATA
                 val testData = TransactionRequest(
-                    account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
                     amount = 0.0,
-                    category = "Test",
+                    category = "Debug",
                     description = reason,
                     type = "income",
+                    account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
                     idempotency_key = UUID.randomUUID().toString()
                 )
                 
-                val token = "Bearer ${com.example.bridge.BuildConfig.JWT_TOKEN}"
+                // ADDING "Bearer " PREFIX
+                val authHeader = "Bearer ${com.example.bridge.BuildConfig.JWT_TOKEN}"
                 
                 withContext(Dispatchers.IO) {
-                    RetrofitClient.instance.postTransaction(token, testData)
+                    RetrofitClient.instance.postTransaction(authHeader, testData)
                 }
                 
                 statusText.text = "  Vercel Connected!"
-                statusDot.setBackgroundColor(0xFF03DAC5.toInt()) // Teal/Green
+                statusDot.setBackgroundColor(0xFF03DAC5.toInt()) 
                 logView.append("> Success: 201 Created\n")
-                
             } catch (e: Exception) {
                 statusText.text = "  Connection Failed"
-                statusDot.setBackgroundColor(0xFFCF6679.toInt()) // Red/Pink
+                statusDot.setBackgroundColor(0xFFCF6679.toInt())
                 logView.append("> Error: ${e.localizedMessage}\n")
             }
         }
@@ -141,6 +131,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.cancel() // Stop background tasks if app closes
+        scope.cancel()
     }
 }

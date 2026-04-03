@@ -19,27 +19,25 @@ class FinanceService : NotificationListenerService() {
 
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
         
-        // 2. Targeted Wallet Regex
-        // Matches: "You've paid Rs. 1 via PhonePe wallet" or "Rs. 1,250.50"
+        // Targeted Wallet Regex
         val walletRegex = "You've paid Rs\\.\\s*([\\d,]+(?:\\.\\d+)?)\\s*via PhonePe wallet".toRegex()
         val match = walletRegex.find(text)
 
         if (match != null) {
-            // Extract amount and remove commas (e.g., "1,000" -> "1000")
-            val amountCleaned = match.groupValues[1].replace(",", "")
-            val amountValue = amountCleaned.toDoubleOrNull() ?: 0.0
+            val amountValue = match.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
             
-            // Create a unique ID so we don't log the same notification twice
-            val idempotencyKey = UUID.nameUUIDFromBytes(text.toByteArray()).toString()
-
+            // Create the payload matching your successful CURL schema
             val payload = TransactionRequest(
-                account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
                 amount = amountValue,
-                category = "PhonePe Wallet",
+                category = "PhonePe Wallet", // Matches your API requirement
                 description = "PhonePe Wallet Payment",
                 type = "expense",
-                idempotency_key = idempotencyKey
+                account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
+                idempotency_key = UUID.nameUUIDFromBytes(text.toByteArray()).toString()
             )
+
+            // DEBUG: See the match in your Fedora terminal
+            android.util.Log.d("BRIDGE_DEBUG", "Match Found! Amount: $amountValue. Syncing...")
 
             syncToVercel(payload)
         }
@@ -54,18 +52,20 @@ class FinanceService : NotificationListenerService() {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
             
-            val token = securePrefs.getString("auth_token", "") ?: ""
+            // Get the raw token and add the "Bearer " prefix (CRITICAL for your API)
+            val rawToken = securePrefs.getString("auth_token", "") ?: ""
+            val authHeader = "Bearer $rawToken"
 
             scope.launch {
                 try {
-                    RetrofitClient.instance.postTransaction(token, data)
+                    val response = RetrofitClient.instance.postTransaction(authHeader, data)
+                    android.util.Log.d("BRIDGE_DEBUG", "Sync Success: 201 Created")
                 } catch (e: Exception) {
-                    // Log error to ADB for your Fedora terminal
                     android.util.Log.e("BRIDGE_ERROR", "Sync failed: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("BRIDGE_ERROR", "Vault/Service Error: ${e.message}")
         }
     }
 }
