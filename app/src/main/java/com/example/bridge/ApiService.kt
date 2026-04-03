@@ -1,10 +1,11 @@
 package com.example.bridge
 
 import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonFactory
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
+import com.example.bridge.BuildConfig
 
 interface TransactionApi {
     @POST("api/transactions/")
