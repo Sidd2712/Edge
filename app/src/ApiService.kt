@@ -7,7 +7,7 @@ import retrofit2.http.Header
 import retrofit2.http.POST
 
 interface TransactionApi {
-    @POST("api/v1/transactions/")
+    @POST("api/transactions/")
     suspend fun postTransaction(
         @Header("Authorization") token: String,
         @Body data: TransactionRequest
