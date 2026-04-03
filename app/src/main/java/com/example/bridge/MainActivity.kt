@@ -9,7 +9,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.*
-import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
     private lateinit var logView: TextView
@@ -27,16 +26,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         val title = TextView(this).apply {
-            text = "SECURE FINANCE BRIDGE"
+            text = "BRIDGE DASHBOARD"
             textSize = 24f
             setTextColor(0xFFBB86FC.toInt())
             gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 40)
         }
 
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, 40, 0, 40)
+            setPadding(0, 20, 0, 40)
         }
 
         statusDot = View(this).apply {
@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         statusText = TextView(this).apply {
             text = "  Initializing..."
             setTextColor(0xFFFFFFFF.toInt())
+            textSize = 16f
         }
 
         statusRow.addView(statusDot)
@@ -89,9 +90,7 @@ class MainActivity : AppCompatActivity() {
             )
             val token = com.example.bridge.BuildConfig.JWT_TOKEN
             securePrefs.edit().putString("auth_token", token).apply()
-            
-            // DEBUG LINE 1: This tells us if the secret exists
-            logView.append("> Token stored (Len: ${token.length})\n")
+            logView.append("> Token Vault Secured (Len: ${token.length})\n")
         } catch (e: Exception) {
             logView.append("> Vault Error: ${e.message}\n")
         }
@@ -103,36 +102,30 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             try {
                 val rawToken = com.example.bridge.BuildConfig.JWT_TOKEN
-                
-                // DEBUG LINE 2: Shows the start of the token so you can verify it
-                val preview = if (rawToken.length > 5) rawToken.take(5) + "..." else "EMPTY"
-                logView.append("> Syncing with token starting: $preview\n")
-
-                // DEBUG LINE 3: SMART PREFIX (Fixes the "Bearer Bearer" issue)
                 val authHeader = if (rawToken.startsWith("Bearer", ignoreCase = true)) {
                     rawToken 
                 } else {
                     "Bearer $rawToken"
                 }
                 
+                // EXACT MATCH FOR YOUR CURL PAYLOAD
                 val testData = TransactionRequest(
-                    amount = 0.0,
-                    category = "Debug",
-                    description = reason,
-                    type = "income",
-                    account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
-                    idempotency_key = UUID.randomUUID().toString()
+                    amount = 1.0,           // Changed from 0.0 to 1.0
+                    category = "string",     // Matches your curl exactly
+                    description = "string",  // Matches your curl exactly
+                    type = "string",         // Matches your curl exactly
+                    account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
                 )
                 
                 withContext(Dispatchers.IO) {
                     RetrofitClient.instance.postTransaction(authHeader, testData)
                 }
                 
-                statusText.text = "  Vercel Connected!"
+                statusText.text = "  Vercel Online"
                 statusDot.setBackgroundColor(0xFF03DAC5.toInt()) 
                 logView.append("> Success: 201 Created\n")
             } catch (e: Exception) {
-                statusText.text = "  Auth Failed"
+                statusText.text = "  Data Error (422?)"
                 statusDot.setBackgroundColor(0xFFCF6679.toInt())
                 logView.append("> Error: ${e.localizedMessage}\n")
             }

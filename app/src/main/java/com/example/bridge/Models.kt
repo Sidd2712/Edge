@@ -5,6 +5,5 @@ data class TransactionRequest(
     val category: String,      // Added this
     val description: String,
     val type: String,
-    val account_id: String,
-    val idempotency_key: String? = null // Optional, but good for retries
+    val account_id: String
 )

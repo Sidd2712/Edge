@@ -7,38 +7,34 @@ import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 class FinanceService : NotificationListenerService() {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // 1. Only listen to PhonePe
+        // 1. Filter for PhonePe only
         if (sbn.packageName != "com.phonepe.app") return
 
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
         
-        // Targeted Wallet Regex
+        // 2. Wallet-specific Regex
         val walletRegex = "You've paid Rs\\.\\s*([\\d,]+(?:\\.\\d+)?)\\s*via PhonePe wallet".toRegex()
         val match = walletRegex.find(text)
 
         if (match != null) {
             val amountValue = match.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
             
-            // Create the payload matching your successful CURL schema
+            // 3. Create payload matching your EXACT 5-field schema (fixes 422)
             val payload = TransactionRequest(
                 amount = amountValue,
-                category = "PhonePe Wallet", // Matches your API requirement
+                category = "PhonePe Wallet",
                 description = "PhonePe Wallet Payment",
                 type = "expense",
-                account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID,
-                idempotency_key = UUID.nameUUIDFromBytes(text.toByteArray()).toString()
+                account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
             )
 
-            // DEBUG: See the match in your Fedora terminal
-            android.util.Log.d("BRIDGE_DEBUG", "Match Found! Amount: $amountValue. Syncing...")
-
+            android.util.Log.d("BRIDGE_DEBUG", "Notification matched! Amount: $amountValue")
             syncToVercel(payload)
         }
     }
@@ -52,16 +48,23 @@ class FinanceService : NotificationListenerService() {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
             
-            // Get the raw token and add the "Bearer " prefix (CRITICAL for your API)
             val rawToken = securePrefs.getString("auth_token", "") ?: ""
-            val authHeader = "Bearer $rawToken"
+            
+            // 4. Smart Bearer Logic (Ensures no "Bearer Bearer" 401 error)
+            val authHeader = if (rawToken.startsWith("Bearer", ignoreCase = true)) {
+                rawToken 
+            } else {
+                "Bearer $rawToken"
+            }
 
             scope.launch {
                 try {
-                    val response = RetrofitClient.instance.postTransaction(authHeader, data)
-                    android.util.Log.d("BRIDGE_DEBUG", "Sync Success: 201 Created")
+                    // Call the API
+                    RetrofitClient.instance.postTransaction(authHeader, data)
+                    android.util.Log.d("BRIDGE_DEBUG", "Service Sync: 201 Created")
                 } catch (e: Exception) {
-                    android.util.Log.e("BRIDGE_ERROR", "Sync failed: ${e.message}")
+                    // This will catch 422 if the model still doesn't match
+                    android.util.Log.e("BRIDGE_ERROR", "Service Sync failed: ${e.localizedMessage}")
                 }
             }
         } catch (e: Exception) {
