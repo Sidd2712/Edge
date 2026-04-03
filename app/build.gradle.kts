@@ -6,19 +6,34 @@ plugins {
 }
 
 android {
-    // This MUST match the folder structure: com/example/bridge
     namespace = "com.example.bridge"
     compileSdk = 35 
 
+    // --- 1. ENSURE THIS IS OUTSIDE DEFAULTCONFIG ---
+    buildFeatures {
+        buildConfig = true 
+    }
+
+    // --- 2. LOAD YOUR SECRETS ---
+    val properties = java.util.Properties()
+    val propertiesFile = project.rootProject.file("local.properties")
+    if (propertiesFile.exists()) {
+        properties.load(propertiesFile.inputStream())
+    }
+
     defaultConfig {
         applicationId = "com.example.bridge"
-        minSdk = 26 // Required for NotificationListener and Security-Crypto
+        minSdk = 26 
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
+
+        // --- 3. BAKE THE SECRETS ---
+        buildConfigField("String", "BASE_URL", "\"${properties.getProperty("BASE_URL") ?: ""}\"")
+        buildConfigField("String", "JWT_TOKEN", "\"${properties.getProperty("JWT_TOKEN") ?: ""}\"")
+        buildCo
 
     buildTypes {
         release {
