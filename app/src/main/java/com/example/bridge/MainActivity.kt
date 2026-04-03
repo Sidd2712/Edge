@@ -22,8 +22,7 @@ class MainActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // FIXED: Changed 'padding = 50' to 'setPadding'
-            setPadding(50, 50, 50, 50) 
+            setPadding(50, 60, 50, 50) 
             setBackgroundColor(0xFF121212.toInt())
         }
 
@@ -46,7 +45,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText = TextView(this).apply {
-            text = "  System Initializing..."
+            text = "  Initializing..."
             setTextColor(0xFFFFFFFF.toInt())
         }
 
@@ -57,7 +56,7 @@ class MainActivity : AppCompatActivity() {
         val btnPermission = Button(this).apply { text = "Fix Notification Access" }
 
         logView = TextView(this).apply {
-            text = "Logs:\n> App Launched\n"
+            text = "Logs:\n"
             setTextColor(0xFF03DAC6.toInt())
             textSize = 14f
             setPadding(0, 40, 0, 0)
@@ -72,13 +71,12 @@ class MainActivity : AppCompatActivity() {
 
         saveToken()
 
-        btnTest.setOnClickListener { performTestSync("Manual UI Test") }
+        btnTest.setOnClickListener { performTestSync("Manual Request") }
         btnPermission.setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
 
-        // Auto-hit on open
-        performTestSync("Startup Pulse Check")
+        performTestSync("Startup Check")
     }
 
     private fun saveToken() {
@@ -89,19 +87,34 @@ class MainActivity : AppCompatActivity() {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-            securePrefs.edit().putString("auth_token", com.example.bridge.BuildConfig.JWT_TOKEN).apply()
-            logView.append("> Token stored in SecureVault\n")
+            val token = com.example.bridge.BuildConfig.JWT_TOKEN
+            securePrefs.edit().putString("auth_token", token).apply()
+            
+            // DEBUG LINE 1: This tells us if the secret exists
+            logView.append("> Token stored (Len: ${token.length})\n")
         } catch (e: Exception) {
             logView.append("> Vault Error: ${e.message}\n")
         }
     }
 
     private fun performTestSync(reason: String) {
-        statusText.text = "  Syncing: $reason..."
+        statusText.text = "  Syncing..."
         
         scope.launch {
             try {
-                // MATCHING YOUR CURL DATA
+                val rawToken = com.example.bridge.BuildConfig.JWT_TOKEN
+                
+                // DEBUG LINE 2: Shows the start of the token so you can verify it
+                val preview = if (rawToken.length > 5) rawToken.take(5) + "..." else "EMPTY"
+                logView.append("> Syncing with token starting: $preview\n")
+
+                // DEBUG LINE 3: SMART PREFIX (Fixes the "Bearer Bearer" issue)
+                val authHeader = if (rawToken.startsWith("Bearer", ignoreCase = true)) {
+                    rawToken 
+                } else {
+                    "Bearer $rawToken"
+                }
+                
                 val testData = TransactionRequest(
                     amount = 0.0,
                     category = "Debug",
@@ -111,9 +124,6 @@ class MainActivity : AppCompatActivity() {
                     idempotency_key = UUID.randomUUID().toString()
                 )
                 
-                // ADDING "Bearer " PREFIX
-                val authHeader = "Bearer ${com.example.bridge.BuildConfig.JWT_TOKEN}"
-                
                 withContext(Dispatchers.IO) {
                     RetrofitClient.instance.postTransaction(authHeader, testData)
                 }
@@ -122,7 +132,7 @@ class MainActivity : AppCompatActivity() {
                 statusDot.setBackgroundColor(0xFF03DAC5.toInt()) 
                 logView.append("> Success: 201 Created\n")
             } catch (e: Exception) {
-                statusText.text = "  Connection Failed"
+                statusText.text = "  Auth Failed"
                 statusDot.setBackgroundColor(0xFFCF6679.toInt())
                 logView.append("> Error: ${e.localizedMessage}\n")
             }
