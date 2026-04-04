@@ -21,57 +21,54 @@ class FinanceService : NotificationListenerService() {
         }
     }
 
-    // --- STEP 2: LIFECYCLE HOOKS ---
-    
-    override fun onListenerConnected() {
-        super.onListenerConnected()
-        showToast("👂 Finance Bridge: LISTENING")
-        android.util.Log.d("BRIDGE_DEBUG", "Service bound to Android OS")
-    }
-
-    override fun onListenerDisconnected() {
-        super.onListenerDisconnected()
-        showToast("❌ Finance Bridge: DISCONNECTED")
-    }
-
-    // --- NOTIFICATION HANDLER ---
-
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val packageName = sbn.packageName
-        val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
+        if (sbn.packageName != "com.phonepe.app") return
 
-        // DEBUG: Uncomment the line below to see EVERY notification your phone gets
-        // showToast("Heard from: $packageName") 
+        val extras = sbn.notification.extras
+        val title = extras.getCharSequence("android.title")?.toString() ?: ""
+        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        val fullContent = "$title $text"
+        
+        android.util.Log.d("BRIDGE_DEBUG", "PhonePe Detected: $fullContent")
 
+        // --- THE REGEX ARSENAL ---
 
-        // 1. Log the full text to your Fedora terminal (via adb logcat)
-        android.util.Log.d("BRIDGE_DEBUG", "PhonePe Raw Text: $text")
-        showToast("PhonePe: ${text.take(15)}...")
+        // 1. Debit Regex (Your existing working pattern)
+        val debitRegex = "paid Rs\\.\\s*([\\d,.]+)\\s*via PhonePe wallet".toRegex(RegexOption.IGNORE_CASE)
 
-        // 2. Robust Regex (Handles Rs., ₹, dots, and spaces)
-        val walletRegex = "paid Rs\\.\\s*([\\d,.]+)\\s*via PhonePe wallet".toRegex(RegexOption.IGNORE_CASE)
-        val match = walletRegex.find(text)
+        // 2. New Credit Regex (Matches: "Money recieved... has sent your ₹ 40")
+        // Note: handles 'recieved' or 'received' and the ₹ symbol
+        val creditRegex = "Money rec[ei]+ved .*? has sent your [₹Rs\\.]+\\s*([\\d,.]+)".toRegex(RegexOption.IGNORE_CASE)
 
-        if (match != null) {
-            val amountValue = match.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
-            
-            val payload = TransactionRequest(
-                amount = amountValue,
-                category = "PhonePe Wallet",
-                description = "PhonePe Wallet Payment",
-                type = "expense",
-                account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
-            )
+        val debitMatch = debitRegex.find(fullContent)
+        val creditMatch = creditRegex.find(fullContent)
 
-            showToast("✅ Match! ₹$amountValue. Syncing...")
-            syncToVercel(payload)
-        } else {
-            // If it hits here, the text doesn't match our "paid Rs... via wallet" pattern
-            android.util.Log.e("BRIDGE_DEBUG", "Regex Mismatch: $text")
+        when {
+            debitMatch != null -> {
+                val amount = debitMatch.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
+                sync(amount, "PhonePe Debit", "expense")
+            }
+            creditMatch != null -> {
+                val amount = creditMatch.groupValues[1].replace(",", "").toDoubleOrNull() ?: 0.0
+                showToast("💰 Income Received: ₹$amount")
+                sync(amount, "PhonePe Credit", "income")
+            }
+            else -> {
+                // Helpful for catching new formats in Fedora terminal
+                android.util.Log.d("BRIDGE_DEBUG", "No Regex match for: $fullContent")
+            }
         }
     }
 
-    private fun syncToVercel(data: TransactionRequest) {
+    private fun sync(amountValue: Double, desc: String, transactionType: String) {
+        val payload = TransactionRequest(
+            amount = amountValue,
+            category = "PhonePe",
+            description = desc,
+            type = transactionType,
+            account_id = com.example.bridge.BuildConfig.ACCOUNT_UUID
+        )
+
         try {
             val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
             val securePrefs = EncryptedSharedPreferences.create(
@@ -85,8 +82,8 @@ class FinanceService : NotificationListenerService() {
 
             scope.launch {
                 try {
-                    RetrofitClient.instance.postTransaction(authHeader, data)
-                    showToast("🚀 Vercel Sync: 201")
+                    RetrofitClient.instance.postTransaction(authHeader, payload)
+                    showToast("🚀 $transactionType Sync: 201")
                 } catch (e: Exception) {
                     showToast("⚠️ Sync Error: ${e.localizedMessage}")
                 }
