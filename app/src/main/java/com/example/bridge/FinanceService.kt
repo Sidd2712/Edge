@@ -22,7 +22,7 @@ class FinanceService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != "com.phonepe.app") return
+        // if (sbn.packageName != "com.phonepe.app") return
 
         val extras = sbn.notification.extras
         val title = extras.getCharSequence("android.title")?.toString() ?: ""
